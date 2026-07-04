@@ -2,19 +2,14 @@
  * Läser skannade PDF:er i valda Google Drive-mappar med OCR och döper om
  * filerna efter den rubrik som verkar inleda dokumentet.
  *
- * Kör dryRunRenameAll() först för att se förslag i en loggflik utan att
- * något byts, och renameAll() när du vill verkställa bytena.
+ * Detta skript är bundet till ett Google Kalkylark som fungerar som
+ * kontrollpanel: en meny i kalkylarket låter dig lägga till mappar genom
+ * att klistra in deras URL i en dialogruta, i stället för att redigera
+ * koden. Se README.md för installation.
  */
 
 const CONFIG = {
-  // Mapp-ID:n för de Drive-mappar som ska genomsökas.
-  // ID:t är delen efter /folders/ i mappens webbadress.
-  FOLDER_IDS: [
-    'KLISTRA_IN_MAPP_ID_1',
-    'KLISTRA_IN_MAPP_ID_2',
-  ],
-
-  // Genomsök även undermappar till mapparna ovan.
+  // Genomsök även undermappar till de tillagda mapparna.
   INCLUDE_SUBFOLDERS: true,
 
   // Språk för OCR-tolkningen (ISO 639-1), t.ex. 'sv' eller 'en'.
@@ -22,9 +17,6 @@ const CONFIG = {
 
   // Max längd på det nya filnamnet, exklusive filändelsen ".pdf".
   MAX_FILENAME_LENGTH: 90,
-
-  // Namn på kalkylarket där körningen loggas (skapas automatiskt).
-  LOG_SHEET_NAME: 'PDF-namnbyten logg',
 };
 
 // Sätts i filens beskrivning efter ett lyckat namnbyte så att filen inte
@@ -33,35 +25,163 @@ const PROCESSED_MARKER = '[OCR-omdöpt]';
 
 // Lämnar marginal under Apps Scripts körtidsgräns (6 minuter för
 // konsumentkonton). Om gränsen börjar närma sig avbryts körningen snyggt;
-// kör bara samma funktion igen för att fortsätta där den slutade.
+// kör bara samma meny-alternativ igen för att fortsätta där den slutade.
 const MAX_RUNTIME_MS = 5 * 60 * 1000;
+
+const FOLDERS_PROPERTY_KEY = 'FOLDER_LIST';
+const LOG_SHEET_NAME = 'Logg';
+const FOLDERS_SHEET_NAME = 'Mappar';
+
+/**
+ * Körs automatiskt när kalkylarket öppnas och skapar menyn. Att skapa en
+ * meny kräver ingen behörighet, så den syns direkt även innan du godkänt
+ * åtkomst till Drive.
+ */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('PDF-namngivning')
+    .addItem('Lägg till mapp (klistra in URL)…', 'addFolderDialog')
+    .addItem('Ta bort en mapp…', 'removeFolderDialog')
+    .addSeparator()
+    .addItem('Förhandsgranska (dry run)', 'dryRunRenameAll')
+    .addItem('Döp om nu (skarpt läge)', 'renameAllConfirm')
+    .addToUi();
+}
+
+/* ================= Mapphantering via dialogrutor ================= */
+
+function addFolderDialog() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.prompt(
+    'Lägg till mapp',
+    'Klistra in webbadressen till Drive-mappen (eller bara mapp-ID:t):',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  const input = response.getResponseText().trim();
+  const folderId = extractFolderId(input);
+  if (!folderId) {
+    ui.alert('Kunde inte hitta ett mapp-ID i det du klistrade in. Kontrollera att hela länken kom med.');
+    return;
+  }
+
+  let folder;
+  try {
+    folder = DriveApp.getFolderById(folderId);
+  } catch (e) {
+    ui.alert('Hittade ingen mapp med det ID:t, eller så saknar du åtkomst till den.');
+    return;
+  }
+
+  const folders = getConfiguredFolders();
+  if (folders.some(function (f) { return f.id === folderId; })) {
+    ui.alert('Mappen "' + folder.getName() + '" är redan tillagd.');
+    return;
+  }
+
+  folders.push({ id: folderId, name: folder.getName() });
+  saveConfiguredFolders(folders);
+  ui.alert('Mappen "' + folder.getName() + '" har lagts till.');
+}
+
+function removeFolderDialog() {
+  const ui = SpreadsheetApp.getUi();
+  const folders = getConfiguredFolders();
+  if (folders.length === 0) {
+    ui.alert('Inga mappar är tillagda än.');
+    return;
+  }
+
+  const list = folders.map(function (f, i) { return (i + 1) + '. ' + f.name; }).join('\n');
+  const response = ui.prompt('Ta bort mapp', 'Ange numret på mappen du vill ta bort:\n\n' + list, ui.ButtonSet.OK_CANCEL);
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  const index = parseInt(response.getResponseText().trim(), 10) - 1;
+  if (isNaN(index) || index < 0 || index >= folders.length) {
+    ui.alert('Ogiltigt nummer.');
+    return;
+  }
+
+  const removed = folders.splice(index, 1)[0];
+  saveConfiguredFolders(folders);
+  ui.alert('Mappen "' + removed.name + '" har tagits bort.');
+}
+
+/** Plockar ut Drive-ID:t ur en fullständig mapp-URL, eller ur ett redan bart ID. */
+function extractFolderId(input) {
+  const match = input.match(/[-\w]{25,}/);
+  return match ? match[0] : '';
+}
+
+function getConfiguredFolders() {
+  const raw = PropertiesService.getDocumentProperties().getProperty(FOLDERS_PROPERTY_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+
+function saveConfiguredFolders(folders) {
+  PropertiesService.getDocumentProperties().setProperty(FOLDERS_PROPERTY_KEY, JSON.stringify(folders));
+  writeFoldersSheet(folders);
+}
+
+/** Speglar den sparade mapplistan i en flik, bara för överblick. */
+function writeFoldersSheet(folders) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(FOLDERS_SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(FOLDERS_SHEET_NAME);
+  sheet.clear();
+  sheet.appendRow(['Mappnamn', 'Mapp-ID']);
+  folders.forEach(function (f) { sheet.appendRow([f.name, f.id]); });
+}
+
+/* ================= Namnbyte ================= */
 
 function dryRunRenameAll() {
   processAllFolders(true);
 }
 
-function renameAll() {
+function renameAllConfirm() {
+  const ui = SpreadsheetApp.getUi();
+  const folders = getConfiguredFolders();
+  if (folders.length === 0) {
+    ui.alert('Inga mappar är tillagda. Lägg till minst en mapp via menyn först.');
+    return;
+  }
+  const response = ui.alert(
+    'Döp om på riktigt?',
+    'Det här döper om PDF-filer i ' + folders.length + ' mapp(ar) permanent. Har du kört "Förhandsgranska" och granskat fliken Logg först?',
+    ui.ButtonSet.YES_NO
+  );
+  if (response !== ui.Button.YES) return;
   processAllFolders(false);
 }
 
 function processAllFolders(dryRun) {
+  const ui = SpreadsheetApp.getUi();
+  const configuredFolders = getConfiguredFolders();
+  if (configuredFolders.length === 0) {
+    ui.alert('Inga mappar är tillagda. Lägg till minst en mapp via menyn "Lägg till mapp" först.');
+    return;
+  }
+
   const sheet = getOrCreateLogSheet();
   const state = { startTime: Date.now(), stopped: false };
 
-  CONFIG.FOLDER_IDS.forEach(function (folderId) {
-    if (state.stopped || !folderId || folderId.indexOf('KLISTRA_IN') === 0) return;
+  configuredFolders.forEach(function (folderInfo) {
+    if (state.stopped) return;
     try {
-      const folder = DriveApp.getFolderById(folderId);
+      const folder = DriveApp.getFolderById(folderInfo.id);
       processFolder(folder, dryRun, sheet, state);
     } catch (e) {
-      logRow(sheet, '', '', folderId, 'FEL: kunde inte öppna mapp – ' + e.message, dryRun);
+      logRow(sheet, '', '', folderInfo.name || folderInfo.id, 'FEL: kunde inte öppna mapp – ' + e.message, dryRun);
     }
   });
 
   if (state.stopped) {
-    logRow(sheet, '', '', '', 'Tidsgränsen närmade sig – kör funktionen igen för att fortsätta.', dryRun);
+    logRow(sheet, '', '', '', 'Tidsgränsen närmade sig – kör samma menyval igen för att fortsätta.', dryRun);
   }
   SpreadsheetApp.flush();
+  ui.alert((dryRun ? 'Förhandsgranskning' : 'Omdöpning') + ' klar. Se fliken "Logg".');
 }
 
 function processFolder(folder, dryRun, sheet, state) {
@@ -199,12 +319,9 @@ function timeIsRunningOut(state) {
 }
 
 function getOrCreateLogSheet() {
-  const existing = DriveApp.getFilesByName(CONFIG.LOG_SHEET_NAME);
-  const ss = existing.hasNext()
-    ? SpreadsheetApp.open(existing.next())
-    : SpreadsheetApp.create(CONFIG.LOG_SHEET_NAME);
-
-  const sheet = ss.getSheets()[0];
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(LOG_SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(LOG_SHEET_NAME);
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(['Tidpunkt', 'Ursprungligt namn', 'Nytt namn', 'Mapp', 'Status', 'Läge']);
   }
