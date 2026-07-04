@@ -15,8 +15,10 @@ koden för att ange vilka mappar som ska genomsökas. Allt körs inne i Google
    via menyn.
 2. För varje fil skapas en tillfällig OCR-tolkad Google Docs-kopia med
    hjälp av Drives inbyggda OCR.
-3. Den första raden i texten som ser ut som en rubrik (inte tom, inte bara
-   siffror/datum) används som nytt filnamn.
+3. Bland de första styckena i texten väljs den mest troliga rubriken: en
+   OCR-igenkänd rubrikstil prioriteras, annars den rad med störst
+   typsnittsstorlek (oftast den mest framträdande texten överst i
+   skanningen). Rena siffer-/datumrader hoppas alltid över.
 4. Filen döps om (originalfilen – inga kopior skapas av de riktiga
    filerna) och märks i sin beskrivning så att den inte behandlas igen.
 5. Alla resultat loggas i fliken **Logg** i kalkylarket, så du kan granska
@@ -63,14 +65,34 @@ koden för att ange vilka mappar som ska genomsökas. Allt körs inne i Google
    – klicka bara på samma menyval igen så fortsätter det med återstående
    filer.
 
+## Granska och rätta felaktiga förslag manuellt
+
+Ingen automatisk OCR-tolkning blir perfekt för alla skanningar. Filer där
+förslaget blev fel eller ingen rubrik alls hittades kan du rätta till för
+hand i fliken **Logg**, utan att skriva om koden:
+
+1. Kör **"Förhandsgranska (dry run)"** och öppna fliken **Logg**.
+2. För de rader du vill ändra: skriv in ett bättre namn i kolumnen
+   **"Nytt namn"** (t.ex. genom att själv titta på PDF:en, eller be en AI
+   läsa den skannade texten och föreslå en rubrik).
+3. Rader du vill lämna helt orörda: se till att "Nytt namn" är tomt – de
+   markeras då som överhoppade i stället för att döpas om.
+4. Klicka **"Tillämpa granskade namn (från Logg)"**. Den döper om exakt de
+   filer som har ett värde i "Nytt namn" (och som inte redan behandlats),
+   och uppdaterar statusen i loggen.
+
+Kolumnen **"Fil-ID"** i loggen används internt för att hitta rätt fil
+oavsett filnamn – rör den inte.
+
 ## Begränsningar
 
 - OCR-kvaliteten beror på hur tydlig skanningen är. Filer där ingen rimlig
   rubrikrad hittas lämnas oförändrade och loggas som sådana – granska dessa
-  manuellt.
-- Rubriklogiken är enkel (första rimliga textraden). Justera funktionen
-  `pickHeadingLine` i `Code.gs` om dina dokument har en annan struktur, t.ex.
-  om rubriken alltid ligger på rad 2 eller är skriven med versaler.
+  manuellt (se ovan).
+- Rubriklogiken bygger på styckets rubrikstil och typsnittsstorlek från
+  OCR-tolkningen, vilket fungerar bra för de flesta skannade dokument men
+  inte alla. Justera funktionen `pickHeadingFromBody` i `Code.gs` om dina
+  dokument har en särskild struktur.
 - Skriptet behöver full Drive-åtkomst (för att döpa om filer), åtkomst till
   Google Dokument (för att läsa OCR-texten) samt till kalkylarket självt
   (för meny, logg och mapplista).
