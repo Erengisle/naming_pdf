@@ -39,7 +39,7 @@ const FOLDERS_SHEET_NAME = 'Mappar';
  */
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu('PDF-namngivning')
+    .createMenu('Namnge pdf')
     .addItem('Lägg till mapp (klistra in URL)…', 'addFolderDialog')
     .addItem('Ta bort en mapp…', 'removeFolderDialog')
     .addSeparator()

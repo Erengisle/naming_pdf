@@ -39,7 +39,7 @@ koden för att ange vilka mappar som ska genomsökas. Allt körs inne i Google
 
 ## Användning
 
-1. I kalkylarket ska en ny meny **"PDF-namngivning"** ha dykt upp.
+1. I kalkylarket ska en ny meny **"Namnge pdf"** ha dykt upp.
 2. Klicka **"Lägg till mapp (klistra in URL)…"** och klistra in webbadressen
    till en Drive-mapp, t.ex.
    `https://drive.google.com/drive/folders/1AbCDeFGhIJKlmnOPQrstUVwxYZ`
