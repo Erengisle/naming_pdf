@@ -246,14 +246,13 @@ function processFile(file, folder, dryRun, sheet) {
  */
 function extractHeadingFromPdf(file) {
   const tempResource = {
-    title: 'TEMP_OCR_' + file.getId(),
+    name: 'TEMP_OCR_' + file.getId(),
     mimeType: MimeType.GOOGLE_DOCS,
   };
 
   let tempFile;
   try {
     tempFile = Drive.Files.copy(tempResource, file.getId(), {
-      ocr: true,
       ocrLanguage: CONFIG.OCR_LANGUAGE,
     });
     const text = DocumentApp.openById(tempFile.id).getBody().getText();

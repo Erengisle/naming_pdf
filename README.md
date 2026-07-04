@@ -32,7 +32,7 @@ koden för att ange vilka mappar som ska genomsökas. Allt körs inne i Google
 4. Öppna projektinställningarna (kugghjulet) och kryssa i "Visa filen
    appsscript.json i editorn". Klistra sedan in innehållet från
    [`apps-script/appsscript.json`](apps-script/appsscript.json) i den
-   filen. Detta aktiverar den avancerade Drive-tjänsten (v2) som behövs för
+   filen. Detta aktiverar den avancerade Drive-tjänsten (v3) som behövs för
    OCR-konverteringen.
 5. Spara projektet och gå tillbaka till kalkylarket (uppdatera fliken om
    den redan var öppen).
