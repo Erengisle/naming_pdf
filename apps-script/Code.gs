@@ -43,8 +43,11 @@ function onOpen() {
     .addItem('Lägg till mapp (klistra in URL)…', 'addFolderDialog')
     .addItem('Ta bort en mapp…', 'removeFolderDialog')
     .addSeparator()
-    .addItem('Förhandsgranska (dry run)', 'dryRunRenameAll')
-    .addItem('Döp om nu (skarpt läge)', 'renameAllConfirm')
+    .addItem('Förhandsgranska alla mappar (dry run)', 'dryRunRenameAll')
+    .addItem('Förhandsgranska en mapp…', 'dryRunOneFolder')
+    .addSeparator()
+    .addItem('Döp om alla mappar (skarpt läge)', 'renameAllConfirm')
+    .addItem('Döp om en mapp…', 'renameOneFolderConfirm')
     .addItem('Tillämpa granskade namn (från Logg)', 'applyReviewedNamesFromLog')
     .addToUi();
 }
@@ -109,6 +112,31 @@ function removeFolderDialog() {
   ui.alert('Mappen "' + removed.name + '" har tagits bort.');
 }
 
+/**
+ * Visar en dialogruta för att välja en av de tillagda mapparna (behövs
+ * inte om bara en mapp finns – då returneras den direkt).
+ */
+function selectFolderDialog(promptTitle) {
+  const ui = SpreadsheetApp.getUi();
+  const folders = getConfiguredFolders();
+  if (folders.length === 0) {
+    ui.alert('Inga mappar är tillagda. Lägg till minst en mapp via menyn först.');
+    return null;
+  }
+  if (folders.length === 1) return folders[0];
+
+  const list = folders.map(function (f, i) { return (i + 1) + '. ' + f.name; }).join('\n');
+  const response = ui.prompt(promptTitle, 'Ange numret på mappen:\n\n' + list, ui.ButtonSet.OK_CANCEL);
+  if (response.getSelectedButton() !== ui.Button.OK) return null;
+
+  const index = parseInt(response.getResponseText().trim(), 10) - 1;
+  if (isNaN(index) || index < 0 || index >= folders.length) {
+    ui.alert('Ogiltigt nummer.');
+    return null;
+  }
+  return folders[index];
+}
+
 /** Plockar ut Drive-ID:t ur en fullständig mapp-URL, eller ur ett redan bart ID. */
 function extractFolderId(input) {
   const match = input.match(/[-\w]{25,}/);
@@ -138,7 +166,7 @@ function writeFoldersSheet(folders) {
 /* ================= Namnbyte ================= */
 
 function dryRunRenameAll() {
-  processAllFolders(true);
+  processFoldersList(getConfiguredFolders(), true);
 }
 
 function renameAllConfirm() {
@@ -154,12 +182,31 @@ function renameAllConfirm() {
     ui.ButtonSet.YES_NO
   );
   if (response !== ui.Button.YES) return;
-  processAllFolders(false);
+  processFoldersList(folders, false);
 }
 
-function processAllFolders(dryRun) {
+function dryRunOneFolder() {
+  const folder = selectFolderDialog('Förhandsgranska en mapp');
+  if (!folder) return;
+  processFoldersList([folder], true);
+}
+
+function renameOneFolderConfirm() {
+  const folder = selectFolderDialog('Döp om en mapp');
+  if (!folder) return;
+
   const ui = SpreadsheetApp.getUi();
-  const configuredFolders = getConfiguredFolders();
+  const response = ui.alert(
+    'Döp om på riktigt?',
+    'Det här döper om PDF-filer i mappen "' + folder.name + '" permanent. Har du kört förhandsgranskning för den mappen och granskat fliken Logg först?',
+    ui.ButtonSet.YES_NO
+  );
+  if (response !== ui.Button.YES) return;
+  processFoldersList([folder], false);
+}
+
+function processFoldersList(configuredFolders, dryRun) {
+  const ui = SpreadsheetApp.getUi();
   if (configuredFolders.length === 0) {
     ui.alert('Inga mappar är tillagda. Lägg till minst en mapp via menyn "Lägg till mapp" först.');
     return;

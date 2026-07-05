@@ -53,10 +53,14 @@ koden för att ange vilka mappar som ska genomsökas. Allt körs inne i Google
      inte dyker upp direkt efter godkännandet.
    - Tillagda mappar visas i fliken **Mappar**. Använd **"Ta bort en
      mapp…"** för att ta bort en mapp ur listan igen.
-3. Klicka **"Förhandsgranska (dry run)"**. Inget byts än – öppna fliken
-   **Logg** och granska de föreslagna namnen.
-4. Ser förslagen bra ut, klicka **"Döp om nu (skarpt läge)"** och bekräfta
-   dialogrutan för att verkställa bytena på riktigt.
+3. Klicka **"Förhandsgranska alla mappar (dry run)"** för att gå igenom
+   samtliga tillagda mappar, eller **"Förhandsgranska en mapp…"** för att
+   bara köra en specifik mapp (praktiskt när du precis lagt till en ny
+   mapp och inte vill vänta på att alla andra körs om). Inget byts än –
+   öppna fliken **Logg** och granska de föreslagna namnen.
+4. Ser förslagen bra ut, klicka **"Döp om alla mappar (skarpt läge)"**
+   respektive **"Döp om en mapp…"** och bekräfta dialogrutan för att
+   verkställa bytena på riktigt.
 5. Filer som redan döpts om hoppas automatiskt över vid senare körningar,
    så det går bra att köra om skriptet för att fånga upp nya filer som
    lagts till i mapparna.
