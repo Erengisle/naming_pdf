@@ -166,7 +166,7 @@ function processAllFolders(dryRun) {
   }
 
   const sheet = getOrCreateLogSheet();
-  const state = { startTime: Date.now(), stopped: false };
+  const state = { startTime: Date.now(), stopped: false, skippedAlreadyProcessed: 0 };
 
   configuredFolders.forEach(function (folderInfo) {
     if (state.stopped) return;
@@ -178,6 +178,9 @@ function processAllFolders(dryRun) {
     }
   });
 
+  if (state.skippedAlreadyProcessed > 0) {
+    logRow(sheet, '', '', '', 'Hoppade tyst över ' + state.skippedAlreadyProcessed + ' redan omdöpt(a) fil(er).', dryRun, '');
+  }
   if (state.stopped) {
     logRow(sheet, '', '', '', 'Tidsgränsen närmade sig – kör samma menyval igen för att fortsätta.', dryRun, '');
   }
@@ -194,7 +197,7 @@ function processFolder(folder, dryRun, sheet, state) {
       state.stopped = true;
       return;
     }
-    processFile(files.next(), folder, dryRun, sheet);
+    processFile(files.next(), folder, dryRun, sheet, state);
   }
 
   if (CONFIG.INCLUDE_SUBFOLDERS) {
@@ -206,13 +209,13 @@ function processFolder(folder, dryRun, sheet, state) {
   }
 }
 
-function processFile(file, folder, dryRun, sheet) {
+function processFile(file, folder, dryRun, sheet, state) {
   const originalName = file.getName();
   const description = file.getDescription() || '';
   const fileId = file.getId();
 
   if (description.indexOf(PROCESSED_MARKER) !== -1) {
-    logRow(sheet, originalName, '(oförändrat)', folder.getName(), 'Hoppar över – redan behandlad', dryRun, fileId);
+    state.skippedAlreadyProcessed++;
     return;
   }
 
