@@ -439,12 +439,23 @@ function timeIsRunningOut(state) {
   return Date.now() - state.startTime > MAX_RUNTIME_MS;
 }
 
+const LOG_HEADERS = ['Tidpunkt', 'Ursprungligt namn', 'Nytt namn', 'Mapp', 'Status', 'Fil-ID'];
+
+/**
+ * Hämtar (eller skapar) loggfliken och ser till att rubrikraden alltid
+ * matchar den kolumnuppsättning koden förväntar sig – även om fliken
+ * skapades av en äldre version av skriptet med andra kolumner. Befintliga
+ * datarader rörs inte.
+ */
 function getOrCreateLogSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(LOG_SHEET_NAME);
   if (!sheet) sheet = ss.insertSheet(LOG_SHEET_NAME);
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['Tidpunkt', 'Ursprungligt namn', 'Nytt namn', 'Mapp', 'Status', 'Fil-ID']);
+
+  const currentHeader = sheet.getRange(1, 1, 1, LOG_HEADERS.length).getValues()[0];
+  const headerMatches = LOG_HEADERS.every(function (h, i) { return currentHeader[i] === h; });
+  if (!headerMatches) {
+    sheet.getRange(1, 1, 1, LOG_HEADERS.length).setValues([LOG_HEADERS]);
   }
   return sheet;
 }
