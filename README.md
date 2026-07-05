@@ -11,18 +11,22 @@ koden för att ange vilka mappar som ska genomsökas. Allt körs inne i Google
 
 ## Så fungerar det
 
-1. Skriptet går igenom PDF-filer i de mappar (och undermappar) du lagt till
-   via menyn.
-2. För varje fil skapas en tillfällig OCR-tolkad Google Docs-kopia med
-   hjälp av Drives inbyggda OCR.
-3. Bland de första styckena i texten väljs den mest troliga rubriken: en
-   OCR-igenkänd rubrikstil prioriteras, annars den rad med störst
-   typsnittsstorlek (oftast den mest framträdande texten överst i
-   skanningen). Rena siffer-/datumrader hoppas alltid över.
-4. Filen döps om (originalfilen – inga kopior skapas av de riktiga
-   filerna) och märks i sin beskrivning så att den inte behandlas igen.
-5. Alla resultat loggas i fliken **Logg** i kalkylarket, så du kan granska
-   både förslag och faktiska byten.
+Skriptet döper aldrig om något automatiskt i samma steg som det läser
+filerna – det finns bara **en** väg till en faktisk omdöpning, för att det
+inte ska gå att av misstag hoppa förbi egna rättningar:
+
+1. **Förhandsgranska** går igenom PDF-filer i de mappar (och undermappar)
+   du lagt till via menyn. För varje fil skapas en tillfällig OCR-tolkad
+   Google Docs-kopia med hjälp av Drives inbyggda OCR, och bland de första
+   styckena väljs den mest troliga rubriken (OCR-igenkänd rubrikstil
+   prioriteras, annars raden med störst typsnittsstorlek). Förslaget
+   skrivs till fliken **Logg** – inget byts i Drive ännu.
+2. Du granskar fliken **Logg** och rättar vid behov kolumnen "Nytt namn"
+   för de filer som blev fel.
+3. **Döp om enligt Logg** läser igenom loggen och döper om exakt de filer
+   som har ett värde i "Nytt namn" – vare sig det är det automatiska
+   förslaget eller din egen rättning. Filer märks i sin beskrivning så att
+   de inte behandlas igen vid nästa förhandsgranskning.
 
 ## Installation
 
@@ -53,37 +57,26 @@ koden för att ange vilka mappar som ska genomsökas. Allt körs inne i Google
      inte dyker upp direkt efter godkännandet.
    - Tillagda mappar visas i fliken **Mappar**. Använd **"Ta bort en
      mapp…"** för att ta bort en mapp ur listan igen.
-3. Klicka **"Förhandsgranska alla mappar (dry run)"** för att gå igenom
-   samtliga tillagda mappar, eller **"Förhandsgranska en mapp…"** för att
-   bara köra en specifik mapp (praktiskt när du precis lagt till en ny
-   mapp och inte vill vänta på att alla andra körs om). Inget byts än –
-   öppna fliken **Logg** och granska de föreslagna namnen.
-4. Ser förslagen bra ut, klicka **"Döp om alla mappar (skarpt läge)"**
-   respektive **"Döp om en mapp…"** och bekräfta dialogrutan för att
-   verkställa bytena på riktigt.
-5. Filer som redan döpts om hoppas automatiskt över vid senare körningar,
-   så det går bra att köra om skriptet för att fånga upp nya filer som
-   lagts till i mapparna.
-6. Har du väldigt många filer kan Apps Scripts körtidsgräns (ca 6 minuter)
-   nås innan alla hunnit behandlas. Körningen avbryts då snyggt och loggas
-   – klicka bara på samma menyval igen så fortsätter det med återstående
-   filer.
-
-## Granska och rätta felaktiga förslag manuellt
-
-Ingen automatisk OCR-tolkning blir perfekt för alla skanningar. Filer där
-förslaget blev fel eller ingen rubrik alls hittades kan du rätta till för
-hand i fliken **Logg**, utan att skriva om koden:
-
-1. Kör **"Förhandsgranska (dry run)"** och öppna fliken **Logg**.
-2. För de rader du vill ändra: skriv in ett bättre namn i kolumnen
-   **"Nytt namn"** (t.ex. genom att själv titta på PDF:en, eller be en AI
-   läsa den skannade texten och föreslå en rubrik).
-3. Rader du vill lämna helt orörda: se till att "Nytt namn" är tomt – de
-   markeras då som överhoppade i stället för att döpas om.
-4. Klicka **"Tillämpa granskade namn (från Logg)"**. Den döper om exakt de
-   filer som har ett värde i "Nytt namn" (och som inte redan behandlats),
-   och uppdaterar statusen i loggen.
+3. Klicka **"Förhandsgranska alla mappar"** för att gå igenom samtliga
+   tillagda mappar, eller **"Förhandsgranska en mapp…"** för att bara köra
+   en specifik mapp (praktiskt när du precis lagt till en ny mapp och inte
+   vill vänta på att alla andra körs om). Inget byts än i Drive.
+4. Öppna fliken **Logg** och granska förslagen i kolumnen "Nytt namn". Är
+   ett förslag fel eller saknas (t.ex. för att OCR:en inte hittade någon
+   tydlig rubrik) – skriv in ett bättre namn själv, eller be en AI läsa
+   den skannade texten och föreslå en rubrik. Vill du att en fil ska
+   lämnas helt orörd, se till att "Nytt namn" är tomt för den raden.
+5. Klicka **"Döp om enligt Logg (efter granskning)"**. Den döper om exakt
+   de filer som har ett värde i "Nytt namn" i loggen – både automatiska
+   förslag du lämnat orörda och egna rättningar – och markerar tomma
+   rader som överhoppade.
+6. Filer som redan döpts om hoppas automatiskt över vid senare
+   förhandsgranskningar, så det går bra att köra om skriptet för att fånga
+   upp nya filer som lagts till i mapparna.
+7. Har du väldigt många filer kan Apps Scripts körtidsgräns (ca 6 minuter)
+   nås innan alla hunnit förhandsgranskas. Körningen avbryts då snyggt och
+   loggas – klicka bara på samma menyval igen så fortsätter det med
+   återstående filer.
 
 Kolumnen **"Fil-ID"** i loggen används internt för att hitta rätt fil
 oavsett filnamn – rör den inte.

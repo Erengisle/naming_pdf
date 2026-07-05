@@ -43,12 +43,10 @@ function onOpen() {
     .addItem('Lägg till mapp (klistra in URL)…', 'addFolderDialog')
     .addItem('Ta bort en mapp…', 'removeFolderDialog')
     .addSeparator()
-    .addItem('Förhandsgranska alla mappar (dry run)', 'dryRunRenameAll')
+    .addItem('Förhandsgranska alla mappar', 'dryRunRenameAll')
     .addItem('Förhandsgranska en mapp…', 'dryRunOneFolder')
     .addSeparator()
-    .addItem('Döp om alla mappar (skarpt läge)', 'renameAllConfirm')
-    .addItem('Döp om en mapp…', 'renameOneFolderConfirm')
-    .addItem('Tillämpa granskade namn (från Logg)', 'applyReviewedNamesFromLog')
+    .addItem('Döp om enligt Logg (efter granskning)', 'applyReviewedNamesFromLog')
     .addToUi();
 }
 
@@ -166,46 +164,22 @@ function writeFoldersSheet(folders) {
 /* ================= Namnbyte ================= */
 
 function dryRunRenameAll() {
-  processFoldersList(getConfiguredFolders(), true);
-}
-
-function renameAllConfirm() {
-  const ui = SpreadsheetApp.getUi();
-  const folders = getConfiguredFolders();
-  if (folders.length === 0) {
-    ui.alert('Inga mappar är tillagda. Lägg till minst en mapp via menyn först.');
-    return;
-  }
-  const response = ui.alert(
-    'Döp om på riktigt?',
-    'Det här döper om PDF-filer i ' + folders.length + ' mapp(ar) permanent. Har du kört "Förhandsgranska" och granskat fliken Logg först?',
-    ui.ButtonSet.YES_NO
-  );
-  if (response !== ui.Button.YES) return;
-  processFoldersList(folders, false);
+  processFoldersList(getConfiguredFolders());
 }
 
 function dryRunOneFolder() {
   const folder = selectFolderDialog('Förhandsgranska en mapp');
   if (!folder) return;
-  processFoldersList([folder], true);
+  processFoldersList([folder]);
 }
 
-function renameOneFolderConfirm() {
-  const folder = selectFolderDialog('Döp om en mapp');
-  if (!folder) return;
-
-  const ui = SpreadsheetApp.getUi();
-  const response = ui.alert(
-    'Döp om på riktigt?',
-    'Det här döper om PDF-filer i mappen "' + folder.name + '" permanent. Har du kört förhandsgranskning för den mappen och granskat fliken Logg först?',
-    ui.ButtonSet.YES_NO
-  );
-  if (response !== ui.Button.YES) return;
-  processFoldersList([folder], false);
-}
-
-function processFoldersList(configuredFolders, dryRun) {
+/**
+ * Går igenom filerna och skriver förslag till Logg. Döper aldrig om något
+ * själv – det enda sättet att verkställa ett namnbyte är
+ * applyReviewedNamesFromLog(), så att redigeringar i loggen aldrig kan
+ * bli överkörda av en parallell "skarp" väg.
+ */
+function processFoldersList(configuredFolders) {
   const ui = SpreadsheetApp.getUi();
   if (configuredFolders.length === 0) {
     ui.alert('Inga mappar är tillagda. Lägg till minst en mapp via menyn "Lägg till mapp" först.');
@@ -219,23 +193,23 @@ function processFoldersList(configuredFolders, dryRun) {
     if (state.stopped) return;
     try {
       const folder = DriveApp.getFolderById(folderInfo.id);
-      processFolder(folder, dryRun, sheet, state);
+      processFolder(folder, sheet, state);
     } catch (e) {
-      logRow(sheet, '', '', folderInfo.name || folderInfo.id, 'FEL: kunde inte öppna mapp – ' + e.message, dryRun, '');
+      logRow(sheet, '', '', folderInfo.name || folderInfo.id, 'FEL: kunde inte öppna mapp – ' + e.message, '');
     }
   });
 
   if (state.skippedAlreadyProcessed > 0) {
-    logRow(sheet, '', '', '', 'Hoppade tyst över ' + state.skippedAlreadyProcessed + ' redan omdöpt(a) fil(er).', dryRun, '');
+    logRow(sheet, '', '', '', 'Hoppade tyst över ' + state.skippedAlreadyProcessed + ' redan omdöpt(a) fil(er).', '');
   }
   if (state.stopped) {
-    logRow(sheet, '', '', '', 'Tidsgränsen närmade sig – kör samma menyval igen för att fortsätta.', dryRun, '');
+    logRow(sheet, '', '', '', 'Tidsgränsen närmade sig – kör samma menyval igen för att fortsätta.', '');
   }
   SpreadsheetApp.flush();
-  ui.alert((dryRun ? 'Förhandsgranskning' : 'Omdöpning') + ' klar. Se fliken "Logg".');
+  ui.alert('Förhandsgranskning klar. Öppna fliken "Logg", granska/redigera förslagen och klicka sedan "Döp om enligt Logg" när du är nöjd.');
 }
 
-function processFolder(folder, dryRun, sheet, state) {
+function processFolder(folder, sheet, state) {
   if (state.stopped) return;
 
   const files = folder.getFilesByType(MimeType.PDF);
@@ -244,19 +218,19 @@ function processFolder(folder, dryRun, sheet, state) {
       state.stopped = true;
       return;
     }
-    processFile(files.next(), folder, dryRun, sheet, state);
+    processFile(files.next(), folder, sheet, state);
   }
 
   if (CONFIG.INCLUDE_SUBFOLDERS) {
     const subfolders = folder.getFolders();
     while (subfolders.hasNext()) {
       if (state.stopped) return;
-      processFolder(subfolders.next(), dryRun, sheet, state);
+      processFolder(subfolders.next(), sheet, state);
     }
   }
 }
 
-function processFile(file, folder, dryRun, sheet, state) {
+function processFile(file, folder, sheet, state) {
   const originalName = file.getName();
   const description = file.getDescription() || '';
   const fileId = file.getId();
@@ -270,26 +244,18 @@ function processFile(file, folder, dryRun, sheet, state) {
   try {
     heading = extractHeadingFromPdf(file);
   } catch (e) {
-    logRow(sheet, originalName, '', folder.getName(), 'FEL vid OCR: ' + e.message, dryRun, fileId);
+    logRow(sheet, originalName, '', folder.getName(), 'FEL vid OCR: ' + e.message, fileId);
     return;
   }
 
   const cleanName = sanitizeFilename(heading);
   if (!cleanName) {
-    logRow(sheet, originalName, '', folder.getName(), 'Ingen rubrik hittades – oförändrat', dryRun, fileId);
+    logRow(sheet, originalName, '', folder.getName(), 'Ingen rubrik hittades – oförändrat', fileId);
     return;
   }
 
   const newFullName = ensureUniqueName(folder, cleanName, 'pdf', fileId);
-
-  if (dryRun) {
-    logRow(sheet, originalName, newFullName, folder.getName(), 'FÖRESLAGET (dry run)', dryRun, fileId);
-    return;
-  }
-
-  file.setName(newFullName);
-  file.setDescription((description + ' ' + PROCESSED_MARKER + ' ' + new Date().toISOString()).trim());
-  logRow(sheet, originalName, newFullName, folder.getName(), 'OMDÖPT', dryRun, fileId);
+  logRow(sheet, originalName, newFullName, folder.getName(), 'FÖRESLAGET', fileId);
 }
 
 /**
@@ -478,11 +444,11 @@ function getOrCreateLogSheet() {
   let sheet = ss.getSheetByName(LOG_SHEET_NAME);
   if (!sheet) sheet = ss.insertSheet(LOG_SHEET_NAME);
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['Tidpunkt', 'Ursprungligt namn', 'Nytt namn', 'Mapp', 'Status', 'Läge', 'Fil-ID']);
+    sheet.appendRow(['Tidpunkt', 'Ursprungligt namn', 'Nytt namn', 'Mapp', 'Status', 'Fil-ID']);
   }
   return sheet;
 }
 
-function logRow(sheet, originalName, newName, folderName, status, dryRun, fileId) {
-  sheet.appendRow([new Date(), originalName, newName, folderName, status, dryRun ? 'DRY RUN' : 'LIVE', fileId || '']);
+function logRow(sheet, originalName, newName, folderName, status, fileId) {
+  sheet.appendRow([new Date(), originalName, newName, folderName, status, fileId || '']);
 }
