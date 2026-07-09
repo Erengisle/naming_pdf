@@ -17,18 +17,24 @@ const CONFIG = {
 
   // Max längd på det nya filnamnet, exklusive filändelsen ".pdf".
   MAX_FILENAME_LENGTH: 90,
+
+  // Lämnar marginal under Apps Scripts körtidsgräns (6 minuter för
+  // konsumentkonton, 30 för Google Workspace). Om gränsen börjar närma sig
+  // avbryts förhandsgranskningen snyggt och kan fortsätta senare (manuellt
+  // eller via triggern, se startAutoPreviewDialog).
+  MAX_RUNTIME_MINUTES: 25,
 };
 
 // Sätts i filens beskrivning efter ett lyckat namnbyte så att filen inte
 // OCR-tolkas och döps om igen vid en senare körning.
 const PROCESSED_MARKER = '[OCR-omdöpt]';
 
-// Lämnar marginal under Apps Scripts körtidsgräns (6 minuter för
-// konsumentkonton). Om gränsen börjar närma sig avbryts körningen snyggt;
-// kör bara samma meny-alternativ igen för att fortsätta där den slutade.
-const MAX_RUNTIME_MS = 5 * 60 * 1000;
+const MAX_RUNTIME_MS = CONFIG.MAX_RUNTIME_MINUTES * 60 * 1000;
 
 const FOLDERS_PROPERTY_KEY = 'FOLDER_LIST';
+const PREVIEW_TRIGGER_FOLDER_PROPERTY_KEY = 'PREVIEW_TRIGGER_FOLDER_ID';
+const PREVIEW_TICK_HANDLER = 'autoPreviewTick';
+const PREVIEW_TRIGGER_INTERVAL_MINUTES = 10;
 const LOG_SHEET_NAME = 'Logg';
 const FOLDERS_SHEET_NAME = 'Mappar';
 
@@ -45,6 +51,9 @@ function onOpen() {
     .addSeparator()
     .addItem('Förhandsgranska alla mappar', 'dryRunRenameAll')
     .addItem('Förhandsgranska en mapp…', 'dryRunOneFolder')
+    .addSeparator()
+    .addItem('Förhandsgranska automatiskt (mapp)…', 'startAutoPreviewDialog')
+    .addItem('Stoppa automatisk förhandsgranskning', 'stopAutoPreviewDialog')
     .addSeparator()
     .addItem('Döp om enligt Logg (efter granskning)', 'applyReviewedNamesFromLog')
     .addToUi();
@@ -186,8 +195,27 @@ function processFoldersList(configuredFolders) {
     return;
   }
 
+  runPreview_(configuredFolders);
+  ui.alert('Förhandsgranskning klar. Öppna fliken "Logg", granska/redigera förslagen och klicka sedan "Döp om enligt Logg" när du är nöjd.');
+}
+
+/**
+ * Kärnlogiken i förhandsgranskningen, utan UI-anrop, så att den kan köras
+ * både från menyn och från en tidsstyrd trigger (se autoPreviewTick).
+ * Filer som redan har en rad i Logg (oavsett status) hoppas över utan
+ * OCR, så upprepade körningar mot samma mapp varken skapar dubbletter i
+ * loggen eller OCR-tolkar samma fil två gånger.
+ */
+function runPreview_(configuredFolders) {
   const sheet = getOrCreateLogSheet();
-  const state = { startTime: Date.now(), stopped: false, skippedAlreadyProcessed: 0 };
+  const state = {
+    startTime: Date.now(),
+    stopped: false,
+    skippedAlreadyProcessed: 0,
+    skippedAlreadyLogged: 0,
+    newlyLogged: 0,
+    alreadyLogged: getAlreadyLoggedFileIds_(sheet),
+  };
 
   configuredFolders.forEach(function (folderInfo) {
     if (state.stopped) return;
@@ -206,7 +234,15 @@ function processFoldersList(configuredFolders) {
     logRow(sheet, '', '', '', 'Tidsgränsen närmade sig – kör samma menyval igen för att fortsätta.', '');
   }
   SpreadsheetApp.flush();
-  ui.alert('Förhandsgranskning klar. Öppna fliken "Logg", granska/redigera förslagen och klicka sedan "Döp om enligt Logg" när du är nöjd.');
+  return state;
+}
+
+function getAlreadyLoggedFileIds_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return new Set();
+  const idCol = LOG_HEADERS.indexOf('Fil-ID') + 1;
+  const ids = sheet.getRange(2, idCol, lastRow - 1, 1).getValues().flat();
+  return new Set(ids.filter(String));
 }
 
 function processFolder(folder, sheet, state) {
@@ -214,11 +250,16 @@ function processFolder(folder, sheet, state) {
 
   const files = folder.getFilesByType(MimeType.PDF);
   while (files.hasNext()) {
+    const file = files.next();
+    if (state.alreadyLogged.has(file.getId())) {
+      state.skippedAlreadyLogged++;
+      continue;
+    }
     if (timeIsRunningOut(state)) {
       state.stopped = true;
       return;
     }
-    processFile(files.next(), folder, sheet, state);
+    processFile(file, folder, sheet, state);
   }
 
   if (CONFIG.INCLUDE_SUBFOLDERS) {
@@ -245,17 +286,92 @@ function processFile(file, folder, sheet, state) {
     heading = extractHeadingFromPdf(file);
   } catch (e) {
     logRow(sheet, originalName, '', folder.getName(), 'FEL vid OCR: ' + e.message, fileId);
+    state.newlyLogged++;
     return;
   }
 
   const cleanName = sanitizeFilename(heading);
   if (!cleanName) {
     logRow(sheet, originalName, '', folder.getName(), 'Ingen rubrik hittades – oförändrat', fileId);
+    state.newlyLogged++;
     return;
   }
 
   const newFullName = ensureUniqueName(folder, cleanName, 'pdf', fileId);
   logRow(sheet, originalName, newFullName, folder.getName(), 'FÖRESLAGET', fileId);
+  state.newlyLogged++;
+}
+
+/* ================= Automatisk förhandsgranskning (trigger) ================= */
+
+/**
+ * Kör en gång via menyn: väljer en mapp och ställer in en tidsstyrd
+ * trigger som fortsätter förhandsgranska den mappen (inkl. undermappar)
+ * var 10:e minut tills alla filer är genomgångna. Triggern tar bort sig
+ * själv när den är klar. Döper aldrig om något – det steget är fortfarande
+ * manuellt via "Döp om enligt Logg".
+ */
+function startAutoPreviewDialog() {
+  const folder = selectFolderDialog('Automatisk förhandsgranskning – välj mapp');
+  if (!folder) return;
+
+  PropertiesService.getDocumentProperties().setProperty(PREVIEW_TRIGGER_FOLDER_PROPERTY_KEY, folder.id);
+  deleteTriggersForHandler_(PREVIEW_TICK_HANDLER);
+  ScriptApp.newTrigger(PREVIEW_TICK_HANDLER)
+    .timeBased()
+    .everyMinutes(PREVIEW_TRIGGER_INTERVAL_MINUTES)
+    .create();
+
+  SpreadsheetApp.getUi().alert(
+    'Automatisk förhandsgranskning igång för mappen "' + folder.name + '" (inkl. undermappar). ' +
+    'Körs var ' + PREVIEW_TRIGGER_INTERVAL_MINUTES + ':e minut tills alla filer är genomgångna, ' +
+    'och stoppar sig själv då. Inget döps om automatiskt – granska fliken Logg och klicka ' +
+    '"Döp om enligt Logg" manuellt när du är klar.'
+  );
+}
+
+function stopAutoPreviewDialog() {
+  deleteTriggersForHandler_(PREVIEW_TICK_HANDLER);
+  SpreadsheetApp.getUi().alert('Automatisk förhandsgranskning stoppad.');
+}
+
+/** Körs av den tidsstyrda triggern. Får aldrig anropa SpreadsheetApp.getUi(). */
+function autoPreviewTick() {
+  const folderId = PropertiesService.getDocumentProperties().getProperty(PREVIEW_TRIGGER_FOLDER_PROPERTY_KEY);
+  const folders = folderId ? [{ id: folderId, name: safeFolderName_(folderId) }] : getConfiguredFolders();
+
+  if (folders.length === 0) {
+    Logger.log('Automatisk förhandsgranskning: inga mappar konfigurerade, stoppar triggern.');
+    deleteTriggersForHandler_(PREVIEW_TICK_HANDLER);
+    return;
+  }
+
+  const state = runPreview_(folders);
+  Logger.log(
+    state.newlyLogged + ' ny(a) fil(er) förhandsgranskade denna körning, ' +
+    state.skippedAlreadyLogged + ' redan i loggen sedan tidigare.'
+  );
+
+  if (!state.stopped) {
+    Logger.log('Klart! Alla filer i mappen är genomgångna. Tar bort triggern.');
+    deleteTriggersForHandler_(PREVIEW_TICK_HANDLER);
+  }
+}
+
+function safeFolderName_(folderId) {
+  try {
+    return DriveApp.getFolderById(folderId).getName();
+  } catch (e) {
+    return folderId;
+  }
+}
+
+function deleteTriggersForHandler_(handlerName) {
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (trigger.getHandlerFunction() === handlerName) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
 }
 
 /**

@@ -73,13 +73,26 @@ inte ska gå att av misstag hoppa förbi egna rättningar:
 6. Filer som redan döpts om hoppas automatiskt över vid senare
    förhandsgranskningar, så det går bra att köra om skriptet för att fånga
    upp nya filer som lagts till i mapparna.
-7. Har du väldigt många filer kan Apps Scripts körtidsgräns (ca 6 minuter)
-   nås innan alla hunnit förhandsgranskas. Körningen avbryts då snyggt och
-   loggas – klicka bara på samma menyval igen så fortsätter det med
-   återstående filer.
+7. Har du väldigt många filer kan Apps Scripts körtidsgräns (25 minuter som
+   standard, justerbart via `CONFIG.MAX_RUNTIME_MINUTES`) nås innan alla
+   hunnit förhandsgranskas. Körningen avbryts då snyggt och loggas – klicka
+   bara på samma menyval igen så fortsätter det med återstående filer (redan
+   loggade filer OCR-tolkas inte om).
 
 Kolumnen **"Fil-ID"** i loggen används internt för att hitta rätt fil
 oavsett filnamn – rör den inte.
+
+### Slippa köra om förhandsgranskningen manuellt
+
+Har du väldigt många filer: klicka **"Förhandsgranska automatiskt
+(mapp)…"**, välj mapp i dialogrutan. Det ställer in en tidsstyrd trigger
+som kör förhandsgranskningen (inkl. undermappar) var 10:e minut tills alla
+filer är genomgångna, och tar då bort sig själv automatiskt. Du kan stänga
+fliken och komma tillbaka senare.
+
+Detta automatiserar **bara förhandsgranskningen** – inget döps om förrän
+du själv granskar fliken Logg och klickar "Döp om enligt Logg". Vill du
+avbryta i förtid: klicka **"Stoppa automatisk förhandsgranskning"**.
 
 ## Begränsningar
 
