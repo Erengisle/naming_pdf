@@ -23,6 +23,15 @@ const CONFIG = {
   // avbryts förhandsgranskningen snyggt och kan fortsätta senare (manuellt
   // eller via triggern, se startAutoPreviewDialog).
   MAX_RUNTIME_MINUTES: 25,
+
+  // Bearbeta bara filer vars NUVARANDE namn innehåller något av orden i
+  // RAW_SCAN_NAME_KEYWORDS (skiftlägesokänsligt) – dvs. filer som fortfarande
+  // har ett oredigerat skannernamn, som "skannat_hakhil_..." eller
+  // "Adobe Scan 03 apr. 2024.pdf". Filer som redan bytt namn till något
+  // annat (manuellt, eller av ett tidigare verktyg) hoppas då över utan
+  // OCR. Sätt till false för att bearbeta alla PDF:er oavsett namn.
+  ONLY_RAW_SCAN_NAMES: true,
+  RAW_SCAN_NAME_KEYWORDS: ['scan', 'skannat'],
 };
 
 // Sätts i filens beskrivning efter ett lyckat namnbyte så att filen inte
@@ -213,6 +222,7 @@ function runPreview_(configuredFolders) {
     stopped: false,
     skippedAlreadyProcessed: 0,
     skippedAlreadyLogged: 0,
+    skippedNotRawScanName: 0,
     newlyLogged: 0,
     alreadyLogged: getAlreadyLoggedFileIds_(sheet),
   };
@@ -227,6 +237,9 @@ function runPreview_(configuredFolders) {
     }
   });
 
+  if (state.skippedNotRawScanName > 0) {
+    logRow(sheet, '', '', '', 'Hoppade tyst över ' + state.skippedNotRawScanName + ' fil(er) vars namn inte ser ut som ett oredigerat skannernamn (redan namngivna).', '');
+  }
   if (state.skippedAlreadyProcessed > 0) {
     logRow(sheet, '', '', '', 'Hoppade tyst över ' + state.skippedAlreadyProcessed + ' redan omdöpt(a) fil(er).', '');
   }
@@ -245,12 +258,25 @@ function getAlreadyLoggedFileIds_(sheet) {
   return new Set(ids.filter(String));
 }
 
+/** Se CONFIG.ONLY_RAW_SCAN_NAMES / RAW_SCAN_NAME_KEYWORDS. */
+function looksLikeRawScanName_(fileName) {
+  if (!CONFIG.ONLY_RAW_SCAN_NAMES) return true;
+  const lower = fileName.toLowerCase();
+  return CONFIG.RAW_SCAN_NAME_KEYWORDS.some(function (kw) {
+    return lower.indexOf(kw.toLowerCase()) !== -1;
+  });
+}
+
 function processFolder(folder, sheet, state) {
   if (state.stopped) return;
 
   const files = folder.getFilesByType(MimeType.PDF);
   while (files.hasNext()) {
     const file = files.next();
+    if (!looksLikeRawScanName_(file.getName())) {
+      state.skippedNotRawScanName++;
+      continue;
+    }
     if (state.alreadyLogged.has(file.getId())) {
       state.skippedAlreadyLogged++;
       continue;

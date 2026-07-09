@@ -82,6 +82,17 @@ inte ska gå att av misstag hoppa förbi egna rättningar:
 Kolumnen **"Fil-ID"** i loggen används internt för att hitta rätt fil
 oavsett filnamn – rör den inte.
 
+### Bearbeta bara filer med oredigerat skannernamn
+
+`CONFIG.ONLY_RAW_SCAN_NAMES` (standard `true`) gör att förhandsgranskningen
+hoppar över filer vars **nuvarande** namn inte innehåller något av orden i
+`CONFIG.RAW_SCAN_NAME_KEYWORDS` (standard `['scan', 'skannat']`,
+skiftlägesokänsligt). Filer som redan bytt namn till något annat – manuellt,
+eller av ett tidigare verktyg – räknas alltså som redan namngivna och
+OCR-tolkas inte alls. Justera listan i `CONFIG` om dina råskanningar följer
+ett annat namnmönster, eller sätt `ONLY_RAW_SCAN_NAMES: false` för att
+bearbeta alla PDF:er oavsett namn.
+
 ### Slippa köra om förhandsgranskningen manuellt
 
 Har du väldigt många filer: klicka **"Förhandsgranska automatiskt
